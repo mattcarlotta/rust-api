@@ -1,8 +1,12 @@
 #[macro_use]
 extern crate rocket;
 
+extern crate image;
+
 use rocket::serde::json::{json, Value};
 use rocket::serde::{Deserialize, Serialize};
+
+mod serve;
 
 // #[cfg(test)]
 // mod tests;
@@ -40,5 +44,6 @@ fn not_found() -> Value {
 fn rocket() -> _ {
     rocket::build()
         .mount("/", routes![index, hello, world])
+        .attach(serve::stage())
         .register("/", catchers![not_found])
 }

@@ -8,3 +8,4 @@ authors = ["Matt Carlotta <matt@mattcarlotta.sh>"]
 
 [dependencies]
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
+image = "0.23.14"
