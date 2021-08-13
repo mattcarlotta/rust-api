@@ -70,30 +70,24 @@ async fn serve_image(
     }
   };
 
-  // determine if cache contains requested file
-  let file: String = match cache.contains_key(&requested_fp) {
-    true => requested_fp,
-    false => {
-      // check if a resized image of the original exists: "original_width.ext"
-      if !get_file_path(requested_fp.to_string()).is_file() {
-        // open the image
-        let current_image = image::open(fp).expect("Failed to open file.");
+  if !cache.contains_key(&requested_fp) {
+    // check if a resized image of the original exists: "original_width.ext"
+    if !get_file_path(requested_fp.to_string()).is_file() {
+      // if not, open the image
+      let current_image = image::open(fp).expect("Failed to open file.");
 
-        // resize and save image to new width
-        current_image
-          .resize(parsed_width, parsed_width, FilterType::CatmullRom)
-          .save(&requested_fp)
-          .expect("Failed to resize file.");
-      }
-
-      // insert file into cache
-      cache.insert(requested_fp.to_string(), requested_fp.to_string());
-
-      requested_fp
+      // resize and save image to new width
+      current_image
+        .resize(parsed_width, parsed_width, FilterType::CatmullRom)
+        .save(&requested_fp)
+        .expect("Failed to resize file.");
     }
-  };
 
-  NamedFile::open(file).await.ok()
+    // insert file into cache
+    cache.insert(requested_fp.to_string(), requested_fp.to_string());
+  }
+
+  NamedFile::open(requested_fp).await.ok()
 }
 
 pub fn stage() -> AdHoc {
