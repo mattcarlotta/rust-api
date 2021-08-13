@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Arguments:
 ///
-/// * `path` - &String
+/// * `path` - String
 ///
 /// Usage: ```get_file_path(path);```
 fn get_file_path(path: String) -> PathBuf {
@@ -42,44 +42,42 @@ async fn serve_image(
   }
   let mut cache = state.lock().await;
 
-  let file_path = get_file_path(get_string_path(path));
-  let pathname = get_string_path(file_path.clone());
+  let fp = get_file_path(get_string_path(path));
+  let pathname = get_string_path(fp.clone());
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
   // convert width to u32
   let parsed_width = width.unwrap_or("0").parse::<u32>().unwrap_or(0);
 
-  // determine whether or not the request file contains a width
-  // and return original pathname or resize image pathname
-  let requested_fp = if parsed_width == 0 {
-    pathname.clone()
-  } else {
-    let image_path = get_string_path(file_path.clone());
+  // determine whether or not the requested file contains a width
+  let requested_fp = match parsed_width == 0 {
+    // and return original pathname
+    true => pathname,
+    // or return filename_width.ext
+    false => {
+      let image_path = get_string_path(fp.clone());
 
-    // split string by "." => filepath.ext => (filepath, ext)
-    let new_image_path: Vec<&str> = image_path.split('.').collect();
+      // split string by "." => filepath.ext => (filepath, ext)
+      let new_image_path: Vec<&str> = image_path.split('.').collect();
 
-    // join width with file name and ext => filename_width.ext
-    let new_path = format!(
-      "{}_{}.{}",
-      &new_image_path[0],
-      &parsed_width.to_string(),
-      &new_image_path[1],
-    );
-
-    new_path
+      // join width with file name and ext => filename_width.ext
+      format!(
+        "{}_{}.{}",
+        &new_image_path[0],
+        &parsed_width.to_string(),
+        &new_image_path[1],
+      )
+    }
   };
 
   // determine if cache contains requested file
-  match cache.contains_key(&requested_fp) {
-    true => NamedFile::open(cache.get(&requested_fp).unwrap())
-      .await
-      .ok(),
+  let file: String = match cache.contains_key(&requested_fp) {
+    true => requested_fp,
     false => {
       // check if a resized image of the original exists: "original_width.ext"
       if !get_file_path(requested_fp.to_string()).is_file() {
         // open the image
-        let current_image = image::open(file_path).expect("Failed to open file.");
+        let current_image = image::open(fp).expect("Failed to open file.");
 
         // resize and save image to new width
         current_image
@@ -88,12 +86,14 @@ async fn serve_image(
           .expect("Failed to resize file.");
       }
 
-      // insert into processed file into cache
+      // insert file into cache
       cache.insert(requested_fp.to_string(), requested_fp.to_string());
 
-      NamedFile::open(requested_fp).await.ok()
+      requested_fp
     }
-  }
+  };
+
+  NamedFile::open(file).await.ok()
 }
 
 pub fn stage() -> AdHoc {
