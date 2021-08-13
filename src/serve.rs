@@ -34,7 +34,7 @@ fn get_string_path(path: PathBuf) -> String {
 async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
-  state: &State<std::sync::Arc<std::sync::Mutex<LRUCache<&str, &str>>>>,
+  state: &State<Arc<Mutex<LRUCache<&str, &str>>>>,
 ) -> Option<NamedFile> {
   // return if path is empty
   if path.as_os_str().is_empty() {
