@@ -6,6 +6,7 @@ extern crate image;
 use rocket::serde::json::{json, Value};
 use rocket::serde::{Deserialize, Serialize};
 
+mod lrucache;
 mod serve;
 
 // #[cfg(test)]

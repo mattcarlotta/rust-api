@@ -1,9 +1,12 @@
 // #![allow(dead_code, unused_variables)]
 
+use crate::lrucache::LRUCache;
 use image::imageops::FilterType;
 use rocket::fairing::AdHoc;
 use rocket::fs::{relative, FileServer, NamedFile};
+use rocket::State;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 /// Converts a string into a path buffer.
 ///
@@ -28,16 +31,24 @@ fn get_string_path(path: PathBuf) -> String {
 }
 
 #[get("/image/<path..>?<width>")]
-async fn serve_image(path: PathBuf, width: Option<&str>) -> Option<NamedFile> {
+async fn serve_image(
+  path: PathBuf,
+  width: Option<&str>,
+  state: &State<std::sync::Arc<std::sync::Mutex<LRUCache<&str, &str>>>>,
+) -> Option<NamedFile> {
   // return if path is empty
   if path.as_os_str().is_empty() {
     return None;
   }
 
-  // get file path buffer
-  let file_path = get_file_path(&get_string_path(path));
+  let pathname = get_string_path(path);
 
-  // TODO - Sanitize widths to prevent n amount of image resizes
+  state.lock().unwrap().insert(&"foo", &"bar");
+
+  // get file path buffer
+  let file_path = get_file_path(&pathname);
+
+  // TODO - Create standardized widths to prevent unlimited amount of image resizes
   // convert width to u32
   let parsed_width = width.unwrap_or("0").parse::<u32>().unwrap_or(0);
 
@@ -45,15 +56,15 @@ async fn serve_image(path: PathBuf, width: Option<&str>) -> Option<NamedFile> {
     let image_path = get_string_path(file_path).clone();
 
     // split string by "." => filepath.ext => (filepath, ext)
-    let path_vector: Vec<&str> = image_path.split('.').collect();
+    let new_image_path: Vec<&str> = image_path.split('.').collect();
 
     // join width with file name and ext => filename_width.ext
     let resized_fp = [
-      path_vector[0],
+      new_image_path[0],
       "_",
       &parsed_width.to_string(),
       ".",
-      path_vector[1],
+      new_image_path[1],
     ]
     .join("");
 
@@ -74,10 +85,12 @@ async fn serve_image(path: PathBuf, width: Option<&str>) -> Option<NamedFile> {
   return NamedFile::open(file_path).await.ok();
 }
 
-pub fn stage() -> rocket::fairing::AdHoc {
+pub fn stage() -> AdHoc {
   AdHoc::on_ignite("serve", |rocket| async {
+    let cache = Arc::new(Mutex::new(LRUCache::<&str, &str>::new(20)));
     rocket
       .mount("/", routes![serve_image])
       .mount("/", FileServer::from(relative!("static")))
+      .manage(cache)
   })
 }
