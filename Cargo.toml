@@ -10,3 +10,4 @@ authors = ["Matt Carlotta <matt@mattcarlotta.sh>"]
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 image = "0.23.14"
 futures-locks = "0.6.0"
+regex = "1.5.4"

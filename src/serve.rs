@@ -1,61 +1,49 @@
 // #![allow(dead_code, unused_variables)]
 
 use crate::lrucache::LRUCache;
+use crate::utils::{get_file_path, get_string_path};
 use futures_locks::Mutex;
 use image::imageops::FilterType;
+use regex::Regex;
 use rocket::fairing::AdHoc;
 use rocket::fs::{relative, FileServer, NamedFile};
 use rocket::State;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-/// Converts a string into a path buffer.
-///
-/// Arguments:
-///
-/// * `path` - String
-///
-/// Usage: ```get_file_path(path);```
-fn get_file_path(path: String) -> PathBuf {
-  Path::new(relative!("static")).join(path.clone())
-}
-
-/// Converts a path buffer into a string.
-///
-/// Arguments:
-///
-/// * `path` - PathBuf
-///
-/// Usage: ```get_string_path(path);```
-fn get_string_path(path: PathBuf) -> String {
-  path.into_os_string().into_string().unwrap()
-}
+type Cache = Mutex<LRUCache<String, String>>;
 
 #[get("/image/<path..>?<width>")]
 async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
-  state: &State<Mutex<LRUCache<String, String>>>,
+  state: &State<Cache>,
 ) -> Option<NamedFile> {
-  // return if path is empty
-  if path.as_os_str().is_empty() {
+  // prevent width reduplication when paths include resized widths -> filename_width.ext?width=xxxx
+  let filename = Regex::new(r"_.*[\d]")
+    .unwrap()
+    .replace_all(&get_string_path(path.clone()), "")
+    .to_string();
+
+  let fn_path = get_file_path(filename);
+
+  // return if path is empty or file doesn't exist
+  if path.as_os_str().is_empty() || !fn_path.is_file() {
     return None;
   }
   let mut cache = state.lock().await;
 
-  let fp = get_file_path(get_string_path(path));
-  let pathname = get_string_path(fp.clone());
+  let pathname = get_string_path(fn_path.clone());
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
   // convert width to u32
   let parsed_width = width.unwrap_or("0").parse::<u32>().unwrap_or(0);
 
-  // determine whether or not the requested file contains a width
   let requested_fp = match parsed_width == 0 {
-    // and return original pathname
+    // return original pathname if no width query
     true => pathname,
     // or return filename_width.ext
     false => {
-      let image_path = get_string_path(fp.clone());
+      let image_path = get_string_path(fn_path.clone());
 
       // split string by "." => filepath.ext => (filepath, ext)
       let new_image_path: Vec<&str> = image_path.split('.').collect();
@@ -73,8 +61,7 @@ async fn serve_image(
   if !cache.contains_key(&requested_fp) {
     // check if a resized image of the original exists: "original_width.ext"
     if !get_file_path(requested_fp.to_string()).is_file() {
-      // if not, open the image
-      let current_image = image::open(fp).expect("Failed to open file.");
+      let current_image = image::open(fn_path).expect("Failed to open file.");
 
       // resize and save image to new width
       current_image
@@ -83,7 +70,7 @@ async fn serve_image(
         .expect("Failed to resize file.");
     }
 
-    // insert file into cache
+    // insert filename into cache
     cache.insert(requested_fp.to_string(), requested_fp.to_string());
   }
 
@@ -92,10 +79,9 @@ async fn serve_image(
 
 pub fn stage() -> AdHoc {
   AdHoc::on_ignite("serve", |rocket| async {
-    let cache = Mutex::new(LRUCache::<String, String>::new(20));
     rocket
       .mount("/", routes![serve_image])
       .mount("/", FileServer::from(relative!("static")))
-      .manage(cache)
+      .manage(Mutex::new(LRUCache::<String, String>::new(1000)))
   })
 }

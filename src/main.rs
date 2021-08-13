@@ -8,6 +8,7 @@ use rocket::serde::{Deserialize, Serialize};
 
 mod lrucache;
 mod serve;
+mod utils;
 
 // #[cfg(test)]
 // mod tests;
