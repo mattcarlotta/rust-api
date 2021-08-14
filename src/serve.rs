@@ -16,14 +16,14 @@ use tokio::io::AsyncReadExt;
 
 type Cache = Mutex<LRUCache<String, Vec<u8>>>;
 
-type CustomVector = Custom<Vec<u8>>;
+type CustomResponseVector = Custom<Vec<u8>>;
 
 #[get("/image/<path..>?<width>")]
 async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
   state: &State<Cache>,
-) -> Option<CustomVector> {
+) -> Option<CustomResponseVector> {
   // prevent width reduplication when path includes resized widths
   // so that <filename>_<width>.<ext> becomes <filename>.<ext>
   let fp = get_string_path(path.clone());
@@ -37,8 +37,15 @@ async fn serve_image(
   // retrieve static folder + filename -> /path/to/static/<filename> buffer
   let fn_path = get_file_path(filename);
 
-  // return if path is empty or file doesn't exist
-  if path.as_os_str().is_empty() || !fn_path.is_file() {
+  // get content type
+  let content_type = match get_extension_from_filename(&fp) {
+    Some(ext) => ContentType::from_extension(ext),
+    None => None,
+  };
+
+  // return if path is empty or file extension is invalid
+  if path.as_os_str().is_empty() || content_type.is_none() {
+    rocket::info_!("The file path and/or content type are invalid.");
     return None;
   }
   let mut cache = state.lock().await;
@@ -47,6 +54,7 @@ async fn serve_image(
   let pathname = get_string_path(fn_path.clone());
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
+  // TODO - Make sure requested image size doesn't extend beyond actual image dimension
   // convert width to u32
   let parsed_width = width.unwrap_or("0").parse::<u32>().unwrap_or(0);
 
@@ -70,31 +78,31 @@ async fn serve_image(
     }
   };
 
-  // get content type
-  let content_type = ContentType::from_extension(get_extension_from_filename(&fp)).unwrap();
-
   // determine if cache contains requested file
   match cache.contains_key(&requested_fp) {
     true => {
       rocket::info_!("Served requested file from cache.");
 
       Some(Custom(
-        content_type,
+        content_type.unwrap(),
         cache.get(&requested_fp).unwrap().clone(),
       ))
     }
     false => {
-      if !cache.contains_key(&requested_fp) {
-        // check if a resized image of the original exists: "original_width.ext"
-        if !get_file_path(requested_fp.to_string()).is_file() {
-          let current_image = image::open(fn_path).expect("Failed to open file.");
-          // resize and save image to new width
-          current_image
-            .resize(parsed_width, parsed_width, FilterType::CatmullRom)
-            .save(&requested_fp)
-            .expect("Failed to resize file.");
-        }
+      // return if file doesn't exist
+      if !fn_path.is_file() {
+        return None;
       }
+      // check if a resized image of the original exists: "original_width.ext"
+      if !get_file_path(requested_fp.to_string()).is_file() {
+        let current_image = image::open(fn_path).expect("Failed to open file.");
+        // resize and save image to new width
+        current_image
+          .resize(parsed_width, parsed_width, FilterType::CatmullRom)
+          .save(&requested_fp)
+          .expect("Failed to resize file.");
+      }
+
       // open requested file
       let mut named_file = File::open(&requested_fp).await.ok().unwrap();
 
@@ -107,7 +115,7 @@ async fn serve_image(
 
       rocket::info_!("Saved requested file into cache.");
 
-      Some(Custom(content_type, contents))
+      Some(Custom(content_type.unwrap(), contents))
     }
   }
 }

@@ -24,9 +24,16 @@ pub fn get_string_path(path: PathBuf) -> String {
   path.into_os_string().into_string().unwrap()
 }
 
-pub fn get_extension_from_filename(filename: &str) -> &str {
-  Path::new(filename)
-    .extension()
-    .and_then(OsStr::to_str)
-    .unwrap()
+/// Retrieves a file extension from a string.
+///
+/// Arguments:
+///
+/// * `filename` - &str
+///
+/// Usage: ```get_extension_from_filename(&filename);```
+pub fn get_extension_from_filename(filename: &str) -> Option<&str> {
+  match Path::new(filename).extension().and_then(OsStr::to_str) {
+    Some(ext) => Some(ext),
+    None => None,
+  }
 }
