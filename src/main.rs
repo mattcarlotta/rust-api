@@ -6,7 +6,7 @@ extern crate image;
 extern crate tokio;
 
 use rocket::serde::json::{json, Value};
-use rocket::serde::{Deserialize, Serialize};
+// use rocket::serde::{Deserialize, Serialize};
 
 mod lrucache;
 mod serve;
@@ -15,26 +15,21 @@ mod utils;
 // #[cfg(test)]
 // mod tests;
 
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "rocket::serde")]
-struct Message {
-    message: String,
-}
+// #[derive(Serialize, Deserialize)]
+// #[serde(crate = "rocket::serde")]
+// struct Message {
+//     message: String,
+// }
 
-#[get("/")]
-fn index() -> Value {
-    json!({ "message": "Welcome to the Rust API!" })
-}
+// #[get("/")]
+// fn index() -> Value {
+//     json!({ "message": "Welcome to the Rust API!" })
+// }
 
-#[get("/hello")]
-fn hello() -> Value {
-    json!({ "message": "Hello, world!" })
-}
-
-#[get("/world")]
-fn world() -> Value {
-    json!({ "message": "Goodbye, world!" })
-}
+// #[get("/hello")]
+// fn hello() -> Value {
+//     json!({ "message": "Hello, world!" })
+// }
 
 #[catch(404)]
 fn not_found() -> Value {
@@ -47,7 +42,7 @@ fn not_found() -> Value {
 #[launch]
 fn rocket() -> _ {
     rocket::build()
-        .mount("/", routes![index, hello, world])
+        // .mount("/", routes![index, hello])
         .attach(serve::stage())
         .register("/", catchers![not_found])
 }

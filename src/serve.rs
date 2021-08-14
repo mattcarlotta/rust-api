@@ -18,17 +18,22 @@ type Cache = Mutex<LRUCache<String, Vec<u8>>>;
 
 type CustomResponseVector = Custom<Vec<u8>>;
 
+// API endpoint: GET http://domain.com/image/example.png?width=800
+// Try visiting:
+//   http://127.0.0.1:5000/placeholder.png
+//   http://127.0.0.1:5000/placeholder.png?width=800
+//   http://127.0.0.1:5000/placeholder.png?width=1000
+//   http://127.0.0.1:5000/placeholder_500.png?width=1000 => falls back to placeholder.png@1000px
 #[get("/image/<path..>?<width>")]
 async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
   state: &State<Cache>,
 ) -> Option<CustomResponseVector> {
-  // prevent width reduplication when path includes resized widths
-  // so that <filename>_<width>.<ext> becomes <filename>.<ext>
-  let fp = get_string_path(path.clone());
+  // convert path to string -> <filename>.<ext>
+  let fp = get_string_path(path.to_path_buf());
 
-  // strip any "_<width>" file paths
+  // if present, strip any included "_<width>" from the filename
   let filename = Regex::new(r"_.*[\d]")
     .unwrap()
     .replace_all(&fp, "")
@@ -37,38 +42,34 @@ async fn serve_image(
   // retrieve static folder + filename -> /path/to/static/<filename> buffer
   let fn_path = get_file_path(filename);
 
-  // get content type
+  // derive content type from filename -> example.png -> .png -> ContentType::PNG
   let content_type = match get_extension_from_filename(&fp) {
     Some(ext) => ContentType::from_extension(ext),
     None => None,
   };
 
-  // return if path is empty or file extension is invalid
+  // fallback to 404 route if path is empty or file extension is invalid
   if path.as_os_str().is_empty() || content_type.is_none() {
     rocket::info_!("The file path and/or content type are invalid.");
     return None;
   }
   let mut cache = state.lock().await;
 
-  // retrieve static folder + filename -> /path/to/static/<filename> string
-  let pathname = get_string_path(fn_path.clone());
+  // retrieve string of static folder with filename -> /path/to/static/<filename>.<ext>
+  let pathname = get_string_path(fn_path.to_path_buf());
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
-  // TODO - Make sure requested image size doesn't extend beyond actual image dimension
-  // convert width to u32
+  // converts supplied "width" argument to a valid u32
   let parsed_width = width.unwrap_or("0").parse::<u32>().unwrap_or(0);
 
+  // store original pathname if no width query or store <filename>_<width>.<ext>
   let requested_fp = match parsed_width == 0 {
-    // return original pathname if no width query
     true => pathname,
-    // or return filename_width.ext
     false => {
-      let image_path = get_string_path(fn_path.clone());
+      let image_path = get_string_path(fn_path.to_path_buf());
 
-      // split string by "." => filepath.ext => (filepath, ext)
       let new_image_path: Vec<&str> = image_path.split('.').collect();
 
-      // join width with file name and ext => filename_width.ext
       format!(
         "{}_{}.{}",
         &new_image_path[0],
@@ -78,44 +79,62 @@ async fn serve_image(
     }
   };
 
-  // determine if cache contains requested file
+  // determine if cache contains requested image
   match cache.contains_key(&requested_fp) {
     true => {
-      rocket::info_!("Served requested file from cache.");
+      rocket::info_!("Served requested image from cache.");
 
-      Some(Custom(
-        content_type.unwrap(),
-        cache.get(&requested_fp).unwrap().clone(),
-      ))
+      // retrieve image from the cache
+      let stored_entry = match cache.get(&requested_fp.to_string()) {
+        Some(val) => val,
+        None => panic!("Unable to retrieve image entry from cache."),
+      };
+
+      // respond to request with cached image
+      Some(Custom(content_type.unwrap(), stored_entry.to_vec()))
     }
     false => {
-      // return if file doesn't exist
+      // return if requested image doesn't exist
       if !fn_path.is_file() {
         return None;
       }
-      // check if a resized image of the original exists: "original_width.ext"
+
+      // TODO - Make sure requested image size doesn't extend beyond actual image dimensions
+      // create a new image from original if one doesn't exist
       if !get_file_path(requested_fp.to_string()).is_file() {
-        let current_image = image::open(fn_path).expect("Failed to open file.");
-        // resize and save image to new width
+        let current_image = image::open(fn_path).expect("Failed to open image.");
         current_image
           .resize(parsed_width, parsed_width, FilterType::CatmullRom)
           .save(&requested_fp)
-          .expect("Failed to resize file.");
+          .expect("Failed to resize image.");
       }
 
-      // open requested file
-      let mut named_file = File::open(&requested_fp).await.ok().unwrap();
+      // open requested image
+      let mut named_file = match File::open(&requested_fp).await {
+        Ok(file) => file,
+        Err(_err) => panic!("Unable to open image."),
+      };
 
-      // read the contents
+      // read the contents of the image
       let mut contents = Vec::new();
-      named_file.read_to_end(&mut contents).await.ok();
+      match named_file.read_to_end(&mut contents).await {
+        Ok(vec) => vec,
+        Err(_f) => panic!("Unable to read the contents of the image."),
+      };
 
-      // store contents into cache
-      cache.insert(requested_fp.to_string(), contents.clone());
+      // store read contents into cache
+      cache.insert(requested_fp.to_string(), contents);
 
-      rocket::info_!("Saved requested file into cache.");
+      // retrieve contents from the cache
+      let stored_entry = match cache.get(&requested_fp.to_string()) {
+        Some(val) => val,
+        None => panic!("Unable to retrieve entry from cache."),
+      };
 
-      Some(Custom(content_type.unwrap(), contents))
+      rocket::info_!("Saved requested image into cache.");
+
+      // respond to request with (original/resized) image
+      Some(Custom(content_type.unwrap(), stored_entry.to_vec()))
     }
   }
 }
