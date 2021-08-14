@@ -1,30 +1,40 @@
 // #![allow(dead_code, unused_variables)]
 
 use crate::lrucache::LRUCache;
-use crate::utils::{get_file_path, get_string_path};
+use crate::utils::{get_extension_from_filename, get_file_path, get_string_path};
 use futures_locks::Mutex;
 use image::imageops::FilterType;
 use regex::Regex;
 use rocket::fairing::AdHoc;
-use rocket::fs::{relative, FileServer, NamedFile};
+use rocket::fs::{relative, FileServer};
+use rocket::http::ContentType;
+use rocket::response::content::Custom;
 use rocket::State;
 use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 
-type Cache = Mutex<LRUCache<String, String>>;
+type Cache = Mutex<LRUCache<String, Vec<u8>>>;
+
+type CustomVector = Custom<Vec<u8>>;
 
 #[get("/image/<path..>?<width>")]
 async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
   state: &State<Cache>,
-) -> Option<NamedFile> {
+) -> Option<CustomVector> {
   // prevent width reduplication when path includes resized widths
   // so that <filename>_<width>.<ext> becomes <filename>.<ext>
+  let fp = get_string_path(path.clone());
+
+  // strip any "_<width>" file paths
   let filename = Regex::new(r"_.*[\d]")
     .unwrap()
-    .replace_all(&get_string_path(path.clone()), "")
+    .replace_all(&fp, "")
     .to_string();
 
+  // retrieve static folder + filename -> /path/to/static/<filename> buffer
   let fn_path = get_file_path(filename);
 
   // return if path is empty or file doesn't exist
@@ -33,6 +43,7 @@ async fn serve_image(
   }
   let mut cache = state.lock().await;
 
+  // retrieve static folder + filename -> /path/to/static/<filename> string
   let pathname = get_string_path(fn_path.clone());
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
@@ -59,23 +70,46 @@ async fn serve_image(
     }
   };
 
-  if !cache.contains_key(&requested_fp) {
-    // check if a resized image of the original exists: "original_width.ext"
-    if !get_file_path(requested_fp.to_string()).is_file() {
-      let current_image = image::open(fn_path).expect("Failed to open file.");
+  // get content type
+  let content_type = ContentType::from_extension(get_extension_from_filename(&fp)).unwrap();
 
-      // resize and save image to new width
-      current_image
-        .resize(parsed_width, parsed_width, FilterType::CatmullRom)
-        .save(&requested_fp)
-        .expect("Failed to resize file.");
+  // determine if cache contains requested file
+  match cache.contains_key(&requested_fp) {
+    true => {
+      rocket::info_!("Served requested file from cache.");
+
+      Some(Custom(
+        content_type,
+        cache.get(&requested_fp).unwrap().clone(),
+      ))
     }
+    false => {
+      if !cache.contains_key(&requested_fp) {
+        // check if a resized image of the original exists: "original_width.ext"
+        if !get_file_path(requested_fp.to_string()).is_file() {
+          let current_image = image::open(fn_path).expect("Failed to open file.");
+          // resize and save image to new width
+          current_image
+            .resize(parsed_width, parsed_width, FilterType::CatmullRom)
+            .save(&requested_fp)
+            .expect("Failed to resize file.");
+        }
+      }
+      // open requested file
+      let mut named_file = File::open(&requested_fp).await.ok().unwrap();
 
-    // insert filename into cache
-    cache.insert(requested_fp.to_string(), requested_fp.to_string());
+      // read the contents
+      let mut contents = Vec::new();
+      named_file.read_to_end(&mut contents).await.ok();
+
+      // store contents into cache
+      cache.insert(requested_fp.to_string(), contents.clone());
+
+      rocket::info_!("Saved requested file into cache.");
+
+      Some(Custom(content_type, contents))
+    }
   }
-
-  NamedFile::open(requested_fp).await.ok()
 }
 
 pub fn stage() -> AdHoc {
@@ -83,6 +117,6 @@ pub fn stage() -> AdHoc {
     rocket
       .mount("/", routes![serve_image])
       .mount("/", FileServer::from(relative!("static")))
-      .manage(Mutex::new(LRUCache::<String, String>::new(1000)))
+      .manage(Mutex::new(LRUCache::<String, Vec<u8>>::new(1000)))
   })
 }

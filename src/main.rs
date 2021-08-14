@@ -3,6 +3,8 @@ extern crate rocket;
 
 extern crate image;
 
+extern crate tokio;
+
 use rocket::serde::json::{json, Value};
 use rocket::serde::{Deserialize, Serialize};
 
