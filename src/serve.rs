@@ -18,7 +18,8 @@ async fn serve_image(
   width: Option<&str>,
   state: &State<Cache>,
 ) -> Option<NamedFile> {
-  // prevent width reduplication when paths include resized widths -> filename_width.ext?width=xxxx
+  // prevent width reduplication when path includes resized widths
+  // so that <filename>_<width>.<ext> becomes <filename>.<ext>
   let filename = Regex::new(r"_.*[\d]")
     .unwrap()
     .replace_all(&get_string_path(path.clone()), "")
