@@ -5,7 +5,8 @@ extern crate image;
 
 extern crate tokio;
 
-use rocket::serde::json::{json, Value};
+use crate::utils::send_error_response;
+use rocket::response::content::Html;
 // use rocket::serde::{Deserialize, Serialize};
 
 mod lrucache;
@@ -32,11 +33,8 @@ mod utils;
 // }
 
 #[catch(404)]
-fn not_found() -> Value {
-    json!({
-        "status": 404,
-        "reason": "Resource was not found."
-    })
+fn not_found() -> Html<String> {
+    send_error_response("Resource was not found.")
 }
 
 #[launch]

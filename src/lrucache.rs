@@ -46,13 +46,13 @@ impl<K: Clone + Hash + Eq, V> LRUCache<K, V> {
   ///
   /// Creates a new cache that can hold the specified number of elements.
   ///
-  pub fn new(cap: usize) -> Self {
+  pub fn new(capacity: usize) -> Self {
     LRUCache {
-      table: HashMap::with_capacity(cap),
-      entries: Vec::with_capacity(cap),
+      table: HashMap::with_capacity(capacity),
+      entries: Vec::with_capacity(capacity),
       first: None,
       last: None,
-      capacity: cap,
+      capacity,
     }
   }
 

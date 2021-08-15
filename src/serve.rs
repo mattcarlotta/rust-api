@@ -1,7 +1,7 @@
 // #![allow(dead_code, unused_variables)]
 
 use crate::lrucache::LRUCache;
-use crate::utils::{get_file_path, get_root_dir, get_string_path};
+use crate::utils::{get_file_path, get_root_dir, get_string_path, send_error_response};
 use futures_locks::Mutex;
 use image::imageops::FilterType;
 use regex::Regex;
@@ -9,6 +9,7 @@ use rocket::fairing::AdHoc;
 use rocket::fs::{relative, FileServer};
 use rocket::http::ContentType;
 use rocket::response::content::Custom;
+use rocket::response::content::Html;
 use rocket::State;
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -31,13 +32,12 @@ async fn serve_image(
   path: PathBuf,
   width: Option<&str>,
   state: &State<Cache>,
-) -> Option<ResponseVec> {
+) -> Result<ResponseVec, Html<String>> {
   // Ensure that this is a directory
   // so that it's not possible to call http://127.0.0.1:5000/placeholder
   // otherwise, fallback to 404 route
   if path.extension().is_none() || path.as_os_str().is_empty() {
-    rocket::info_!("The file path is invalid.");
-    return None;
+    return Err(send_error_response("The file path is invalid."));
   }
 
   // Here we def have a <file>.<ext>
@@ -55,10 +55,10 @@ async fn serve_image(
       .and_then(ContentType::from_extension);
 
     if content_type.is_none() {
-      rocket::info_!("The content type is missing.");
+      return Err(send_error_response("The image content type is invalid."));
     }
 
-    (filename, content_type?)
+    (filename, content_type.unwrap())
   };
 
   // TODO - Create standardized widths to prevent unlimited amount of image resizes
@@ -82,82 +82,70 @@ async fn serve_image(
       let ext = fn_path
         .extension()
         .and_then(OsStr::to_str)
-        .expect(&format!("File is missing extension: {}", image_path));
+        .expect(&format!("Image is missing extension: {}", image_path));
 
       let stem = fn_path
         .file_stem()
         .and_then(OsStr::to_str)
-        .expect(&format!("File is missing extension: {}", image_path));
+        .expect(&format!("Image is missing extension: {}", image_path));
 
       format!("{}/{}_{}.{}", get_root_dir(), stem, parsed_width, ext)
     }
   };
   let mut cache = state.lock().await;
   // determine if cache contains requested image
-  match cache.contains_key(&requested_fp) {
-    true => {
-      rocket::info_!("Served requested image from cache.");
-      // retrieve image from the cache
-      let stored_entry = cache
-        .get(&requested_fp)
-        .expect("Unable to retrieve image entry from cache.");
-
-      // respond to request with cached image
-      Some(Custom(content_type, stored_entry.to_vec()))
+  if !cache.contains_key(&requested_fp) {
+    // return if requested image doesn't exist
+    if !fn_path.is_file() {
+      return Err(send_error_response("Resource was not found."));
     }
-    false => {
-      // return if requested image doesn't exist
-      if !fn_path.is_file() {
-        return None;
-      }
 
-      // TODO - Make sure requested image size doesn't extend beyond actual image dimensions
-      // create a new image from original if one doesn't exist
-      if !get_file_path(&requested_fp).is_file() {
-        let current_image = image::open(fn_path).expect("Failed to open image.");
-        current_image
-          .resize(parsed_width, parsed_width, FilterType::CatmullRom)
-          .save(&requested_fp)
-          .expect("Failed to resize image.");
-      }
-
-      // open requested image
-      let mut named_file = match File::open(&requested_fp).await {
-        Ok(file) => file,
-        Err(reason) => {
-          rocket::info_!("Unable to open image: {}", reason);
-          return None;
-        }
-      };
-
-      // read the contents of the image
-      let mut contents = Vec::new();
-      match named_file.read_to_end(&mut contents).await {
-        Ok(vec) => vec,
-        Err(reason) => {
-          rocket::info_!("Unable to read the contents of the image: {}", reason);
-          return None;
-        }
-      };
-
-      // store read contents into cache
-      cache.insert(requested_fp.clone(), contents);
-
-      // retrieve contents from the cache
-      let stored_entry = match cache.get(&requested_fp) {
-        Some(val) => val,
-        None => {
-          rocket::info_!("Unable to retrieve entry from cache.");
-          return None;
-        }
-      };
-
-      rocket::info_!("Saved requested image into cache.");
-
-      // respond to request with (original/resized) image
-      Some(Custom(content_type, stored_entry.clone()))
+    // TODO - Make sure requested image size doesn't extend beyond actual image dimensions
+    // create a new image from original if one doesn't exist
+    if !get_file_path(&requested_fp).is_file() {
+      let original_image = image::open(fn_path).expect("Failed to open image.");
+      original_image
+        .resize(parsed_width, parsed_width, FilterType::CatmullRom)
+        .save(&requested_fp)
+        .expect("Failed to resize image.");
     }
+
+    // open requested image
+    let mut existing_file = match File::open(&requested_fp).await {
+      Ok(file) => file,
+      Err(reason) => {
+        return Err(send_error_response(&format!(
+          "Unable to open image: {}",
+          reason
+        )));
+      }
+    };
+
+    // read the contents of the image
+    let mut contents = Vec::new();
+    match existing_file.read_to_end(&mut contents).await {
+      Ok(vec) => vec,
+      Err(reason) => {
+        rocket::info_!("Unable to read the contents of the image: {}", reason);
+        return Err(send_error_response("Resource was not found."));
+      }
+    };
+
+    // store read contents into cache
+    cache.insert(requested_fp.clone(), contents);
+
+    info_!("Saved requested image into cache.");
   }
+
+  // retrieve image from the cache
+  let stored_entry = cache
+    .get(&requested_fp)
+    .expect("Unable to retrieve image entry from cache.");
+
+  info_!("Served requested image from cache.");
+
+  // respond to request with cached image
+  Ok(Custom(content_type, stored_entry.to_vec()))
 }
 
 // OLD:
@@ -253,14 +241,14 @@ async fn serve_image(
 //       }
 
 //       // open requested image
-//       let mut named_file = match File::open(&requested_fp).await {
+//       let mut existing_file = match File::open(&requested_fp).await {
 //         Ok(file) => file,
 //         Err(_err) => panic!("Unable to open image."),
 //       };
 
 //       // read the contents of the image
 //       let mut contents = Vec::new();
-//       match named_file.read_to_end(&mut contents).await {
+//       match existing_file.read_to_end(&mut contents).await {
 //         Ok(vec) => vec,
 //         Err(_f) => panic!("Unable to read the contents of the image."),
 //       };
