@@ -8,20 +8,22 @@ use std::path::{Path, PathBuf};
 ///
 /// * `path` - String
 ///
+/// Returns: `&'static str`
+///
 /// Usage: ```get_file_path(path);```
-/// notes: using AsRef creates a cheap reference-to-reference conversion
 pub fn get_root_dir() -> &'static str {
   Path::new(relative!("static")).to_str().unwrap()
 }
 
-/// Converts a string into a path buffer.
+/// Joins a pathbuf with a relative path to the `static` folder.
 ///
 /// Arguments:
 ///
 /// * `path` - String
 ///
+/// Returns: `PathBuf`
+///
 /// Usage: ```get_file_path(path);```
-/// notes: using AsRef creates a cheap reference-to-reference conversion
 pub fn get_file_path(path: impl AsRef<Path>) -> PathBuf {
   Path::new(relative!("static")).join(path)
 }
@@ -37,10 +39,9 @@ pub fn get_file_path(path: impl AsRef<Path>) -> PathBuf {
 ///
 /// * `path` - PathBuf
 ///
+/// Returns: `String`
+///
 /// Usage: ```get_string_path(path);```
-/// notes: using AsRef creates a cheap reference-to-reference conversion
-/// to_str: yields a &str slice if the OsStr is valid Unicode.
-/// into: value-to-value conversion that consumes the input value
 pub fn get_string_path(path: impl AsRef<Path>) -> String {
   path.as_ref().to_str().unwrap().into()
 }
@@ -50,6 +51,8 @@ pub fn get_string_path(path: impl AsRef<Path>) -> String {
 /// Arguments:
 ///
 /// * `reason` - &str
+///
+/// Returns: `Html<String>`
 ///
 /// Usage: ```send_error_response(reason);```
 pub fn send_error_response(reason: &str) -> Html<String> {

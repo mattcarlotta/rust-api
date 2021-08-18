@@ -9,6 +9,7 @@ use rocket::response::content::Html;
 // use rocket::serde::{Deserialize, Serialize};
 
 mod lrucache;
+mod reqimage;
 mod serve;
 mod utils;
 
@@ -40,6 +41,6 @@ fn not_found() -> Html<String> {
 fn rocket() -> _ {
     rocket::build()
         // .mount("/", routes![index, hello])
-        .attach(serve::stage())
+        .attach(serve::main())
         .register("/", catchers![not_found])
 }
