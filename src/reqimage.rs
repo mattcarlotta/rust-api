@@ -16,7 +16,7 @@ pub struct RequestedImage {
   pub width: u32,
 }
 
-impl<'t> RequestedImage {
+impl<'p, 'w> RequestedImage {
   /// Initialize a new requested image that:
   /// * strips out any provided widths within the stem -> filename_width -> filename
   /// * creates buffers from the stripped pathname and a potential new path (filename_width.ext)
@@ -28,7 +28,7 @@ impl<'t> RequestedImage {
   /// * `width` - Option<&'_ str>
   ///
   /// Usage: ```RequestedImage::new(&path, width);```
-  pub fn new(path: &'t PathBuf, width: Option<&'_ str>) -> Self {
+  pub fn new(path: &'p PathBuf, width: Option<&'w str>) -> Self {
     // if present, strip any included "_<width>" from the filename
     let filename = Regex::new(r"_.*[\d]")
       .unwrap()
@@ -109,7 +109,7 @@ impl<'t> RequestedImage {
   ///
   /// Usage: ```req_image.read();```
   pub async fn read(&self) -> Result<Vec<u8>, String> {
-    // TODO - Make sure requested image size doesn't extend beyond actual image dimensions
+    // TODO - Make sure requested image size doesn'p extend beyond actual image dimensions
     // open requested image
     let mut existing_file = match File::open(&self.new_pathname).await {
       Ok(file) => file,
