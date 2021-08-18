@@ -20,7 +20,7 @@ type ResErr = Html<String>;
 #[get("/image/<path..>?<width>")]
 async fn serve_image(
     path: PathBuf,
-    width: Option<&'_ str>,
+    width: Option<&str>,
     state: &State<Cache>,
 ) -> Result<ResVec, ResErr> {
     // ensure that path is a directory
