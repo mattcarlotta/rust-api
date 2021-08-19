@@ -1,5 +1,6 @@
 use crate::utils::{get_file_path, get_root_dir, get_string_path};
 use image::imageops::FilterType;
+use image::GenericImageView;
 use regex::Regex;
 use rocket::http::ContentType;
 use std::ffi::OsStr;
@@ -92,15 +93,23 @@ impl<'p, 'w> RequestedImage {
     /// Arguments: (none)
     ///
     /// Usage: ```req_image.save();```
-    pub fn save(&self) {
+    pub fn save(&self) -> Result<(), String> {
         // open original image
         let original_image = image::open(&self.path).expect("Failed to open image.");
+
+        let (width, ..) = original_image.dimensions();
+
+        if self.width >= width {
+            return Err(format!("Unable to request a width of {}px because it meets or exceeds the original image's width of {}px.", self.width, width).to_string());
+        }
 
         // resize and save it as the requested width
         original_image
             .resize(self.width, self.width, FilterType::CatmullRom)
             .save(self.new_pathname.to_string())
             .expect("Failed to resize image.");
+
+        Ok(())
     }
 
     /// Asynchronously reads the requested image and returns its contents as `Vec<u8>`

@@ -5,7 +5,6 @@ extern crate image;
 
 extern crate tokio;
 
-use rocket::response::content::Html;
 // use rocket::serde::{Deserialize, Serialize};
 
 mod lrucache;
@@ -33,8 +32,8 @@ mod utils;
 // }
 
 #[catch(404)]
-fn not_found() -> Html<String> {
-    utils::send_error_response("Resource was not found.")
+fn not_found() -> utils::InvalidRequest {
+    utils::send_404_response("Resource was not found.".to_string())
 }
 
 #[launch]
