@@ -2,7 +2,7 @@
 
 use crate::lrucache::LRUCache;
 use crate::reqimage::RequestedImage;
-use crate::utils::{send_400_response, send_404_response, InvalidRequest};
+use crate::utils::{non_standardized, send_400_response, send_404_response, InvalidRequest};
 use futures_locks::Mutex;
 use rocket::fairing::AdHoc;
 use rocket::fs::{relative, FileServer};
@@ -14,10 +14,10 @@ type Cache = Mutex<LRUCache<String, Vec<u8>>>;
 
 type ResVec = Custom<Vec<u8>>;
 
-#[get("/image/<path..>?<width>")]
+#[get("/image/<path..>?<ratio>")]
 async fn serve_image(
     path: PathBuf,
-    width: Option<&str>,
+    ratio: Option<&str>,
     state: &State<Cache>,
 ) -> Result<ResVec, InvalidRequest> {
     // ensure that path is a directory
@@ -25,8 +25,22 @@ async fn serve_image(
         return Err(send_404_response("The file path is invalid.".to_string()));
     }
 
+    // converts supplied "ratio" to a valid u8 integer
+    let ratio = ratio
+        .map(str::parse::<u8>)
+        .map(Result::ok)
+        .flatten()
+        .unwrap_or(0);
+
+    // ensure the provided ratio is standardized
+    if non_standardized(ratio) {
+        return Err(send_400_response(
+            "The provided ratio is invalid! It must be one of the following: 0, 20, 35, 50, 75 or 90.".to_string(),
+        ));
+    }
+
     // initialize requested image
-    let req_image = RequestedImage::new(&path, width);
+    let req_image = RequestedImage::new(&path, ratio);
 
     // ensure the requested image has a valid content type
     if req_image.content_type.is_none() {

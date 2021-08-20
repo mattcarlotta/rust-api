@@ -1,7 +1,6 @@
 use crate::utils::{get_file_path, get_root_dir, get_string_path};
 use image::imageops::FilterType;
 use image::GenericImageView;
-use regex::Regex;
 use rocket::http::ContentType;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -14,42 +13,34 @@ pub struct RequestedImage {
     pub path: PathBuf,
     pub new_pathname: String,
     pub new_pathname_buf: PathBuf,
-    pub width: u32,
+    pub ratio: u8,
 }
 
-impl<'p, 'w> RequestedImage {
+impl<'p, 'r> RequestedImage {
     /// Initialize a new requested image that:
-    /// * strips out any provided widths within the stem -> filename_width -> filename
-    /// * creates buffers from the stripped pathname and a potential new path (filename_width.ext)
+    /// * strips out any provided ratios within the stem -> filename_ratio -> filename
+    /// * creates buffers from the stripped pathname and a potential new path (filename_ratio.ext)
     /// * retrieves content type from requested image
     ///
     /// Arguments:
     ///
     /// * `path` - PathBuf
-    /// * `width` - Option<&str>
+    /// * `ratio` - Option<u8>
     ///
-    /// Usage: ```RequestedImage::new(&path, width);```
-    pub fn new(path: &'p PathBuf, width: Option<&'w str>) -> Self {
-        // if present, strip any included "_<width>" from the filename
-        let filename = Regex::new(r"_.*[\d]")
-            .unwrap()
-            .replace_all(&get_string_path(path.to_path_buf()), "")
-            .to_string();
+    /// Usage: ```RequestedImage::new(&path, ratio);```
+    pub fn new(path: &'p PathBuf, ratio: u8) -> Self {
+        // if present, strip any included "_<ratio>" from the filename
+        let filename: String = get_string_path(path.to_path_buf())
+            .chars()
+            .filter(|c| !c.is_digit(10))
+            .filter(|c| *c != '_')
+            .collect();
 
         // retrieve file path to "static" folder => <rootdir><static><filename>.<ext>
         let filepath = get_file_path(filename);
 
-        // TODO - Create standardized widths to prevent unlimited amount of image resizes
-        // converts supplied "width" argument to a valid u32
-        let width = width
-            .map(str::parse::<u32>)
-            .map(Result::ok)
-            .flatten()
-            .unwrap_or(0);
-
-        // assign original pathname if no width query: <rootdir><filename>.<ext>
-        // or assign pathname with width: <rootdir><filename>_<width>.<ext>
-        let pathname = match width == 0 {
+        // or assign pathname with ratio: <rootdir><filename>_<ratio>.<ext>
+        let pathname = match ratio == 0 {
             true => get_string_path(&filepath),
             false => {
                 // retrieve image file stem => <filename>
@@ -63,7 +54,7 @@ impl<'p, 'w> RequestedImage {
                     .extension()
                     .and_then(OsStr::to_str)
                     .expect(&format!("Image is missing extension"));
-                format!("{}/{}_{}.{}", get_root_dir(), stem, width, ext)
+                format!("{}/{}_{}.{}", get_root_dir(), stem, ratio, ext)
             }
         };
 
@@ -75,11 +66,11 @@ impl<'p, 'w> RequestedImage {
             path: get_file_path(&filepath),
             new_pathname: pathname.to_string(),
             new_pathname_buf: Path::new(&pathname).to_path_buf(),
-            width,
+            ratio,
         }
     }
 
-    /// Determines if a requested image path with width already exists
+    /// Determines if a requested image path with ratio already exists
     ///
     /// Arguments: (none)
     ///
@@ -88,7 +79,7 @@ impl<'p, 'w> RequestedImage {
         self.new_pathname_buf.is_file()
     }
 
-    /// Saves a new image to disk with the provided resized width of the requested image
+    /// Saves a new image to disk with the provided resized ratio of the requested image
     ///
     /// Arguments: (none)
     ///
@@ -97,15 +88,15 @@ impl<'p, 'w> RequestedImage {
         // open original image
         let original_image = image::open(&self.path).expect("Failed to open image.");
 
+        // pull out width from read image
         let (width, ..) = original_image.dimensions();
 
-        if self.width >= width {
-            return Err(format!("Unable to request a width of {}px because it meets or exceeds the original image's width of {}px.", self.width, width).to_string());
-        }
+        // calculate new image width based on ratio
+        let new_image_width = (width * self.ratio as u32 / 100) as u32;
 
-        // resize and save it as the requested width
+        // resize and save it as the requested ratio
         original_image
-            .resize(self.width, self.width, FilterType::CatmullRom)
+            .resize(new_image_width, new_image_width, FilterType::CatmullRom)
             .save(self.new_pathname.to_string())
             .expect("Failed to resize image.");
 
