@@ -59,15 +59,7 @@ pub fn get_string_path(path: impl AsRef<Path>) -> String {
 ///
 /// Usage: ```non_standardized(ratio);
 pub fn non_standardized(r: u8) -> bool {
-    match r {
-        0 => return false,
-        20 => return false,
-        35 => return false,
-        50 => return false,
-        75 => return false,
-        90 => return false,
-        _ => return true,
-    }
+    [0, 20, 35, 50, 75, 90].contains(&r)
 }
 
 /// Reusable 400 response.
