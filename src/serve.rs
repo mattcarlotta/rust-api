@@ -2,7 +2,7 @@
 
 use crate::lrucache::LRUCache;
 use crate::reqimage::RequestedImage;
-use crate::utils::{non_standardized, send_400_response, send_404_response, InvalidRequest};
+use crate::utils::{send_400_response, send_404_response, InvalidRequest};
 use futures_locks::Mutex;
 use rocket::fairing::AdHoc;
 use rocket::fs::{relative, FileServer};
@@ -33,7 +33,7 @@ async fn serve_image(
         .unwrap_or(0);
 
     // ensure the provided ratio is standardized
-    if non_standardized(ratio) {
+    if ![0, 20, 35, 50, 75, 90].contains(&ratio) {
         return Err(send_400_response(
             "The provided ratio is invalid! It must be one of the following: 0, 20, 35, 50, 75 or 90.".to_string(),
         ));

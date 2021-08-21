@@ -48,20 +48,6 @@ pub fn get_string_path(path: impl AsRef<Path>) -> String {
     path.as_ref().to_str().unwrap().into()
 }
 
-/// Determines standardized ratios
-/// exptects: 0, 20, 35, 50, 75, 90
-///
-/// Arguments:
-///
-/// * `ratio` - u8
-///
-/// Returns `bool`
-///
-/// Usage: ```non_standardized(ratio);
-pub fn non_standardized(r: u8) -> bool {
-    [0, 20, 35, 50, 75, 90].contains(&r)
-}
-
 /// Reusable 400 response.
 ///
 /// Arguments:
